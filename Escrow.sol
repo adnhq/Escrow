@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity =0.8.15;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -13,15 +13,15 @@ contract Escrow is Ownable, IERC721Receiver {
     using Counters for Counters.Counter;
     Counters.Counter private _tradeIds;
 
-    // Escrow fees paid per trader on each NFT
-    uint public eFee = 1e18;
-    uint public rFee = 2e18; 
+    // Escrow fees paid by trader category on each NFT
+    uint public eliteFee = 1e18;
+    uint public regularFee = 2e18; 
     uint public nonHolderFee = 3e18;
 
     IERC721 private constant ELITE = IERC721(0x5B38Da6a701c568545dCfcB03FcB875f56beddC4);
     IERC721 private constant REGULAR = IERC721(0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2);
 
-    IERC20 private constant T_TOKEN = IERC20(0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db);
+    IERC20 private constant TOKEN = IERC20(0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db);
     
     bool public paused = false;
 
@@ -82,10 +82,11 @@ contract Escrow is Ownable, IERC721Receiver {
         require(_items0.length != 0 && _items1.length != 0, "Escrow: invalid items");
         _tradeIds.increment();
         uint currentId = _tradeIds.current();
+        Trade storage trade = _idToTrade[currentId];
 
-        _idToTrade[currentId].trader0 = msg.sender;
-        _idToTrade[currentId].trader1 = _trader1;
-        _idToTrade[currentId].active = true;
+        trade.trader0 = msg.sender;
+        trade.trader1 = _trader1;
+        trade.active = true;
 
         _takeFee(_items0.length + _items1.length);
 
@@ -93,7 +94,7 @@ contract Escrow is Ownable, IERC721Receiver {
             if(_items0[i].nft == address(0)) 
                 revert("Escrow: contract cannot be zero address");
             else {
-                _idToTrade[currentId].items0.push(_items0[i]);
+                trade.items0.push(_items0[i]);
                 IERC721(_items0[i].nft).safeTransferFrom(msg.sender, address(this), _items0[i].tokenId);
             }       
         }
@@ -102,7 +103,7 @@ contract Escrow is Ownable, IERC721Receiver {
             if(_items1[j].nft == address(0)) 
                 revert("Escrow: contract cannot be zero address");
             else 
-                _idToTrade[currentId].items1.push(_items1[j]);     
+                trade.items1.push(_items1[j]);     
         }
 
         emit TradeInitiated(currentId, msg.sender, _trader1, block.timestamp);
@@ -135,7 +136,7 @@ contract Escrow is Ownable, IERC721Receiver {
     /// @notice Cancels a trade in case of an unresponsive trader
     /// @notice Returns initially received items to the caller/trade creator
     /// @param tradeId ID of the trade to cancel
-    function cancel(uint tradeId) external notPaused {
+    function cancelTrade(uint tradeId) external notPaused {
         Trade memory trade = _idToTrade[tradeId];
         require(msg.sender == trade.trader0, "Escrow: must be trade creator");
         require(trade.active, "Escrow: trade not active");
@@ -149,34 +150,34 @@ contract Escrow is Ownable, IERC721Receiver {
 
     /// @dev Calculates and takes escrow fee from caller
     function _takeFee(uint totalItems) private {
-        uint feeAmt;
+        uint fee;
         if(ELITE.balanceOf(msg.sender) > 0) 
-            feeAmt = eFee;
+            fee = eliteFee;
         else if(REGULAR.balanceOf(msg.sender) > 0)
-            feeAmt = rFee;
+            fee = regularFee;
         else 
-            feeAmt = nonHolderFee;
+            fee = nonHolderFee;
         
-        T_TOKEN.safeTransferFrom(msg.sender, address(this), totalItems * feeAmt);
+        TOKEN.safeTransferFrom(msg.sender, address(this), totalItems * fee);
     }
 
     /* |--- ONLY OWNER ---| */
 
-    /// @notice Transfers T_TOKEN token balance of the contract to the owner
+    /// @notice Transfers TOKEN token balance of the contract to the owner
     function collectFee() external onlyOwner {
-        T_TOKEN.transfer(msg.sender, T_TOKEN.balanceOf(address(this))); 
+        TOKEN.transfer(msg.sender, TOKEN.balanceOf(address(this))); 
     }
 
     /// @notice Change escrow fee for elite members
-    /// @param _eFee new elite fee
-    function setEliteFee(uint _eFee) external onlyOwner {
-        eFee = _eFee;
+    /// @param _eliteFee new elite fee
+    function setEliteFee(uint _eliteFee) external onlyOwner {
+        eliteFee = _eliteFee;
     }
 
     /// @notice Change escrow fee for regular members
-    /// @param _rFee new regular fee
-    function setRegularFee(uint _rFee) external onlyOwner {
-        rFee = _rFee;
+    /// @param _regularFee new regular fee
+    function setRegularFee(uint _regularFee) external onlyOwner {
+        regularFee = _regularFee;
     }
 
     /// @notice Change escrow fee for non holders
